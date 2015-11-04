@@ -10,7 +10,7 @@ param (
 	[string]$SiteName,
 	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site URL")] 
 	[string]$SiteUrl,
-	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, or Project)")] 
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, or Project)")] n
 	[string]$SiteType,
 	[Parameter(Mandatory=$false,HelpMessage="Please Specify if Web has Unique Permissions (true or false)")]
 	[string]$InheritPermissions,
@@ -29,6 +29,12 @@ Function CreateDefaultSiteGroups {
 			Write-Host "`nERROR: Failed to create Default Site Groups!`nERROR MSG: $_" -Foreground "Red"
 		}
 	}
+}
+
+# Create Access Request Email
+Function AccessEmail {
+	$Web.RequestAccessEmail =$userEmail
+	$Web.Update()
 }
 
 # Remove Unnecessary Site/Web Groups
