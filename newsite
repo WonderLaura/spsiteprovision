@@ -31,10 +31,10 @@ if ( -not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIden
 if ((Get-PSSnapin -Name Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue) -eq $null) { Add-PSSnapin Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue } 
 
 # Validate that a valid Farm Type was specified and if so set Farm specific variables
-if ($FarmType.ToUpper() -eq "DEV") { $SiteOwner = "contoso\laura" }
-elseif ($FarmType.ToUpper() -eq "TEST") { $SiteOwner = "contoso\laura" }
-elseif ($FarmType.ToUpper() -eq "PROD") { $SiteOwner = "contoso\laura" }
-elseif ($FarmType.ToUpper() -eq "DR") { $SiteOwner = "contoso\laura" } 
+if ($FarmType.ToUpper() -eq "DEV") { $SiteOwner = "contoso\administrator" }
+elseif ($FarmType.ToUpper() -eq "TEST") { $SiteOwner = "contoso\administrator" }
+elseif ($FarmType.ToUpper() -eq "PROD") { $SiteOwner = "contoso\administrator" }
+elseif ($FarmType.ToUpper() -eq "DR") { $SiteOwner = "contoso\administrator" } 
 else {
 	Write-Host "`nERROR: You have entered an invalid EPNT Farm Type! `nERROR MSG: Please try again and specify DEV, TEST, PROD, or DR as the -FarmType value." -Foreground "Red"
 	Write-Host "`nEnd Create New Site Script`n"
@@ -137,7 +137,7 @@ Function CreateDefaultSiteGroups {
 	$Web = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
 	if ($Web -ne $null) { 
 		try { 
-			$Web.CreateDefaultAssociatedGroups($SiteOwner,"","") 
+			$Web.CreateDefaultAssociatedGroups("SHAREPOINT\system","","") 
 			Write-Host "`nDefault Site Groups Successfully Created" -Foreground "Green"
 		} catch {
 			Write-Host "`nERROR: Failed to create Default Site Groups!`nERROR MSG: $_" -Foreground "Red"
@@ -300,6 +300,47 @@ if ($InheritPermissions -eq $false) {
 	If ($SiteType.ToUpper() -eq "INTRANET" -and $SiteLevel.ToUpper() -eq "WEB") { CreateDefaultSiteGroups }
 }
 
+
+$web=$site.RootWeb;
+write-host "Connected to the site successfully..."
+
+write-host "Step 1: Creating custom permission level: Site Manager"
+$plAdmin=New-Object Microsoft.SharePoint.SPRoleDefinition
+$plAdmin.Name="Site Manager"
+$plAdmin.Description="In charge of managing the site"
+$plAdmin.BasePermissions="EmptyMask,
+ViewListItems,
+AddListItems,
+EditListItems,
+DeleteListItems,
+ApproveItems,
+OpenItems,
+ViewVersions,
+DeleteVersions,
+CancelCheckout,
+ViewFormPages,
+Open,
+ViewPages,
+AddAndCustomizePages,
+ApplyThemeAndBorder,
+ApplyStyleSheets,
+ViewUsageData,
+BrowseDirectories,
+BrowseUserInfo,
+AddDelPrivateWebParts,
+UpdatePersonalWebParts,
+UseClientIntegration,
+UseRemoteAPIs,
+ManageAlerts,
+CreateAlerts,
+EditMyUserInfo,
+EnumeratePermissions"
+$web.RoleDefinitions.Add($plAdmin);
+write-host "Step 1: Done"
+
+# Specify the name of the visitors SharePoint group
+$visitorsSPGroupName = ($SiteName + ' Visitors')
+
 # Enable Features
 
 	# Enable Site Collection Features
@@ -322,13 +363,13 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 	Write-Host "`nUpdating Site Permissions"
 	# Set Update Variables
 	$Web = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
-	if ($SiteType.ToUpper() -eq "BI" -or $SiteType.ToUpper() -eq "INTRANET") { $Owner = $Web.EnsureUser($SiteOwner.Substring(5)) } 
+	if ($SiteType.ToUpper() -eq "BI" -or $SiteType.ToUpper() -eq "INTRANET") { $Owner = $Web.EnsureUser($SiteOwner.Substring(8)) } 
 	if ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT") { 
-		$Owner = $Web.EnsureUser($SiteOwner)
-		$OwnerDirect = $Web.EnsureUser($SiteOwner.Substring(8))
+		$Owner = $Web.EnsureUser($SiteOwner.Substring(8))
+		$OwnerDirect = $Web.EnsureUser($SiteOwner)
 	}
 
-	$Admins = $Web.EnsureUser($sitename + ' Owners')
+	# $Admins = $Web.EnsureUser($sitename + ' Owners') - not sure what the admins var is for, so commenting out.
 
 	# Remove Site Owner's Direct Site Permissions
 	if (($Web -ne $null) -and ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT")) { 
@@ -350,32 +391,32 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 	}
 
 	# Create Designers Site Group and Grant Designer Role Permissions to Site
-	$GroupOwner = $Web.SiteGroups["$SiteName Owners"]
-	$GroupDesc = "Use this group to grant people full control permissions to the SharePoint site: $SiteName"
+	# $GroupOwner = $Web.SiteGroups["$SiteName Owners"]
+	# $GroupDesc = "Use this group to grant people full control permissions to the SharePoint site: $SiteName"
 
-	try {
+	# try {
 		# Create Designers Site Group
-		$Web.SiteGroups.Add("$SiteName Designers",$Web.Site.Owner,$Web.Site.Owner,$GroupDesc)
-		$DesignersGroup = $Web.SiteGroups["$SiteName Designers"]
-		$DesignersGroup.AllowMembersEditMembership = $false
-		$DesignersGroup.Owner = $GroupOwner
-		$DesignersGroup.Update()
+		# $Web.SiteGroups.Add("$SiteName Designers",$Web.Site.Owner,$Web.Site.Owner,$GroupDesc)
+		# $DesignersGroup = $Web.SiteGroups["$SiteName Designers"]
+		# $DesignersGroup.AllowMembersEditMembership = $false
+		# $DesignersGroup.Owner = $GroupOwner
+		# $DesignersGroup.Update()
 
 		# Grant Designers Site Group Design Role
-		$DesignersGroupAssignment = New-Object Microsoft.SharePoint.SPRoleAssignment($DesignersGroup)
-		$DesignersRoleDefinition = $Web.Site.RootWeb.RoleDefinitions["Design"]
-		$DesignersGroupAssignment.RoleDefinitionBindings.Add($DesignersRoleDefinition)
-		$Web.RoleAssignments.Add($DesignersGroupAssignment)
-		$Web.Update()
+		# $DesignersGroupAssignment = New-Object Microsoft.SharePoint.SPRoleAssignment($DesignersGroup)
+		# $DesignersRoleDefinition = $Web.Site.RootWeb.RoleDefinitions["Design"]
+		# $DesignersGroupAssignment.RoleDefinitionBindings.Add($DesignersRoleDefinition)
+		# $Web.RoleAssignments.Add($DesignersGroupAssignment)
+		# $Web.Update()
 
 		# Remove Site Owner from Designers Site Group
-		$Owner = $Web.EnsureUser($SiteOwner.Substring(8))
-		$DesignersGroup.RemoveUser($Owner)
+		# $Owner = $Web.EnsureUser($SiteOwner.Substring(8))
+		# $DesignersGroup.RemoveUser($Owner)
 
-		Write-Host "`nDesigners Site Group ($SiteName Designers) Successfully Created and Granted Design Permissions" -Foreground "Green"
-	} catch {
-		Write-Host "`nERROR: Failed to create Designers Site Group ($SiteName Designers)!`nERROR MSG: $_" -Foreground "Red"
-	}
+		# Write-Host "`nDesigners Site Group ($SiteName Designers) Successfully Created and Granted Design Permissions" -Foreground "Green"
+	# } catch {
+	# 	Write-Host "`nERROR: Failed to create Designers Site Group ($SiteName Designers)!`nERROR MSG: $_" -Foreground "Red"
+	# }
 }
 
 # Create Default Site Lists
