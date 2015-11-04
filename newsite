@@ -6,17 +6,131 @@
 param (
 	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Level (Collection or Web)")] 
 	[string]$SiteLevel,
-	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Name")] 
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Name")]
 	[string]$SiteName,
 	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site URL")] 
 	[string]$SiteUrl,
-	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, or Project)")] n
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, or Project)")]
 	[string]$SiteType,
 	[Parameter(Mandatory=$false,HelpMessage="Please Specify if Web has Unique Permissions (true or false)")]
 	[string]$InheritPermissions,
 	[Parameter(Mandatory=$true,HelpMessage="Please Enter the type of EPNT Farm (DEV, TEST, PROD, or DR)")] 
 	[string]$FarmType
 )
+Write-Host "`nBegin Create New Site Script"
+
+# Validate that PowerShell is Running in Administrator Mode
+if ( -not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
+	Write-Host "`nERROR: This PowerShell Prompt is not running in Administrator mode" -foregroundcolor "red"
+	Write-Host "Please restart PowerShell using 'Run As Administrator' option and try again" -foregroundcolor "red"
+	Write-Host "`nEnd Create New Site Script`n"
+	return
+}
+
+# Validate that SharePoint Snap-In is Loaded and if not Load Snap-In
+if ((Get-PSSnapin -Name Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue) -eq $null) { Add-PSSnapin Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue } 
+
+# Validate that a valid Farm Type was specified and if so set Farm specific variables
+if ($FarmType.ToUpper() -eq "DEV") { $SiteOwner = "contoso\laura" }
+elseif ($FarmType.ToUpper() -eq "TEST") { $SiteOwner = "contoso\laura" }
+elseif ($FarmType.ToUpper() -eq "PROD") { $SiteOwner = "contoso\laura" }
+elseif ($FarmType.ToUpper() -eq "DR") { $SiteOwner = "contoso\laura" } 
+else {
+	Write-Host "`nERROR: You have entered an invalid EPNT Farm Type! `nERROR MSG: Please try again and specify DEV, TEST, PROD, or DR as the -FarmType value." -Foreground "Red"
+	Write-Host "`nEnd Create New Site Script`n"
+	return
+}
+
+# Validate that a validate Site Type was specified and if so set Site Template variables
+if ($SiteType.ToUpper() -eq "BI") { $SiteTemplate = Get-SPWebTemplate "BICenterSite#0" }
+elseif ($SiteType.ToUpper() -eq "TEAM") { $SiteTemplate = Get-SPWebTemplate "STS#0" }
+elseif ($SiteType.ToUpper() -eq "PROJECT") { $SiteTemplate = Get-SPWebTemplate "PROJECTSITE#0" }
+elseif ($SiteType.ToUpper() -eq "INTRANET") { $SiteTemplate = Get-SPWebTemplate "BLANKINTERNETCONTAINER#0" -CompatibilityLevel 15 }
+else {
+	Write-Host "`nERROR: You have entered an invalid Site Type! `nERROR MSG: Please try again and specify BI or Team as the -SiteType value." -Foreground "Red"
+	Write-Host "`nEnd Create New Site Script`n"
+	return
+}
+
+# Validate Inherit Permissions Variable was specified and if no set it to False
+if (!$InheritPermissions) { $InheritPermissions = $false }
+if ($SiteLevel.ToUpper() -eq "COLLECTION") { $InheritPermissions = $false }
+
+# Create Site
+if ($SiteLevel.ToUpper() -eq "COLLECTION") {
+	# Validate that the Site URL is not already in use
+	$Site = Get-SPSite $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+	if ($Site) { 
+		Write-Host "`nERROR: The requested Site URL ($SiteUrl) is already in use!`nERROR MSG: Please try again and specify a different Site URL." -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+
+	# Create New Site Collection
+	try {
+		Write-Host "`nCreating $SiteName Site"
+
+		$Site = New-SPSite $SiteUrl -Name $SiteName `
+		-OwnerAlias $SiteOwner `
+		-Template $SiteTemplate `
+		-ErrorAction SilentlyContinue `
+		-ErrorVariable spError `
+		-WarningAction SilentlyContinue `
+		-WarningVariable spWarn
+
+		if ($Site -ne $null) { Write-Host "`n$SiteName Site Successfully Created" -Foreground "Green" } 
+		elseif ($spError -ne $null) { 
+			Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
+			Write-Host "`nEnd Create New Site Script`n"
+			return
+		}
+	} catch {
+		Write-Host "`nERROR: Failed to Create $SiteName Top Level Site Collection!`nERROR MSG: $spError" -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+} elseif ($SiteLevel.ToUpper() -eq "WEB") {
+	# Validate that the Web URL is not already in use
+	$Site = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+	if ($Site) { 
+		Write-Host "`nERROR: The requested Site URL ($SiteUrl) is already in use!`nERROR MSG: Please try again and specify a different Site URL." -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+
+	# Create New Site
+	try {
+		Write-Host "`nCreating $SiteName Site"
+
+		if ($InheritPermissions -eq $false) {
+			$Site = New-SPWeb $SiteUrl -Name $SiteName `
+			-Template $SiteTemplate `
+			-UniquePermissions `
+			-ErrorAction SilentlyContinue `
+			-ErrorVariable spError `
+			-WarningAction SilentlyContinue `
+			-WarningVariable spWarn
+		} else { 
+			$Site = New-SPWeb $SiteUrl -Name $SiteName `
+			-Template $SiteTemplate `
+			-ErrorAction SilentlyContinue `
+			-ErrorVariable spError `
+			-WarningAction SilentlyContinue `
+			-WarningVariable spWarn
+		}
+
+		if ($Site -ne $null) { Write-Host "`n$SiteName Site Successfully Created" -Foreground "Green" } 
+		elseif ($spError -ne $null) { 
+			Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
+			Write-Host "`nEnd Create New Site Script`n"
+			return
+		}
+	} catch {
+		Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+}
 
 # Create Default Site Groups
 Function CreateDefaultSiteGroups {
@@ -176,120 +290,7 @@ Function CreateList ($ListName, $ListType, $CustomList) {
 	}
 }
 
-Write-Host "`nBegin Create New Site Script"
 
-# Validate that PowerShell is Running in Administrator Mode
-if ( -not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
-	Write-Host "`nERROR: This PowerShell Prompt is not running in Administrator mode" -foregroundcolor "red"
-	Write-Host "Please restart PowerShell using 'Run As Administrator' option and try again" -foregroundcolor "red"
-	Write-Host "`nEnd Create New Site Script`n"
-	return
-}
-
-# Validate that SharePoint Snap-In is Loaded and if not Load Snap-In
-if ((Get-PSSnapin -Name Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue) -eq $null) { Add-PSSnapin Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue } 
-
-# Validate that a valid Farm Type was specified and if so set Farm specific variables
-if ($FarmType.ToUpper() -eq "DEV") { $SiteOwner = "<Insert Site Owner Here>" }
-elseif ($FarmType.ToUpper() -eq "TEST") { $SiteOwner = "<Insert Site Owner Here>" }
-elseif ($FarmType.ToUpper() -eq "PROD") { $SiteOwner = "<Insert Site Owner Here>" }
-elseif ($FarmType.ToUpper() -eq "DR") { $SiteOwner = "<Insert Site Owner Here>" } 
-else {
-	Write-Host "`nERROR: You have entered an invalid EPNT Farm Type! `nERROR MSG: Please try again and specify DEV, TEST, PROD, or DR as the -FarmType value." -Foreground "Red"
-	Write-Host "`nEnd Create New Site Script`n"
-	return
-}
-
-# Validate that a validate Site Type was specified and if so set Site Template variables
-if ($SiteType.ToUpper() -eq "BI") { $SiteTemplate = Get-SPWebTemplate "BICenterSite#0" }
-elseif ($SiteType.ToUpper() -eq "TEAM") { $SiteTemplate = Get-SPWebTemplate "STS#0" }
-elseif ($SiteType.ToUpper() -eq "PROJECT") { $SiteTemplate = Get-SPWebTemplate "PROJECTSITE#0" }
-elseif ($SiteType.ToUpper() -eq "INTRANET") { $SiteTemplate = Get-SPWebTemplate "BLANKINTERNETCONTAINER#0" -CompatibilityLevel 15 }
-else {
-	Write-Host "`nERROR: You have entered an invalid Site Type! `nERROR MSG: Please try again and specify BI or Team as the -SiteType value." -Foreground "Red"
-	Write-Host "`nEnd Create New Site Script`n"
-	return
-}
-
-# Validate Inherit Permissions Variable was specified and if no set it to False
-if (!$InheritPermissions) { $InheritPermissions = $false }
-if ($SiteLevel.ToUpper() -eq "COLLECTION") { $InheritPermissions = $false }
-
-# Create Site
-if ($SiteLevel.ToUpper() -eq "COLLECTION") {
-	# Validate that the Site URL is not already in use
-	$Site = Get-SPSite $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
-	if ($Site) { 
-		Write-Host "`nERROR: The requested Site URL ($SiteUrl) is already in use!`nERROR MSG: Please try again and specify a different Site URL." -Foreground "Red"
-		Write-Host "`nEnd Create New Site Script`n"
-		return
-	}
-
-	# Create New Site Collection
-	try {
-		Write-Host "`nCreating $SiteName Site"
-
-		$Site = New-SPSite $SiteUrl -Name $SiteName `
-		-OwnerAlias $SiteOwner `
-		-Template $SiteTemplate `
-		-ErrorAction SilentlyContinue `
-		-ErrorVariable spError `
-		-WarningAction SilentlyContinue `
-		-WarningVariable spWarn
-
-		if ($Site -ne $null) { Write-Host "`n$SiteName Site Successfully Created" -Foreground "Green" } 
-		elseif ($spError -ne $null) { 
-			Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
-			Write-Host "`nEnd Create New Site Script`n"
-			return
-		}
-	} catch {
-		Write-Host "`nERROR: Failed to Create $SiteName Top Level Site Collection!`nERROR MSG: $spError" -Foreground "Red"
-		Write-Host "`nEnd Create New Site Script`n"
-		return
-	}
-} elseif ($SiteLevel.ToUpper() -eq "WEB") {
-	# Validate that the Web URL is not already in use
-	$Site = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
-	if ($Site) { 
-		Write-Host "`nERROR: The requested Site URL ($SiteUrl) is already in use!`nERROR MSG: Please try again and specify a different Site URL." -Foreground "Red"
-		Write-Host "`nEnd Create New Site Script`n"
-		return
-	}
-
-	# Create New Site
-	try {
-		Write-Host "`nCreating $SiteName Site"
-
-		if ($InheritPermissions -eq $false) {
-			$Site = New-SPWeb $SiteUrl -Name $SiteName `
-			-Template $SiteTemplate `
-			-UniquePermissions `
-			-ErrorAction SilentlyContinue `
-			-ErrorVariable spError `
-			-WarningAction SilentlyContinue `
-			-WarningVariable spWarn
-		} else { 
-			$Site = New-SPWeb $SiteUrl -Name $SiteName `
-			-Template $SiteTemplate `
-			-ErrorAction SilentlyContinue `
-			-ErrorVariable spError `
-			-WarningAction SilentlyContinue `
-			-WarningVariable spWarn
-		}
-
-		if ($Site -ne $null) { Write-Host "`n$SiteName Site Successfully Created" -Foreground "Green" } 
-		elseif ($spError -ne $null) { 
-			Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
-			Write-Host "`nEnd Create New Site Script`n"
-			return
-		}
-	} catch {
-		Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
-		Write-Host "`nEnd Create New Site Script`n"
-		return
-	}
-}
 
 # Create Default Site Groups
 if ($InheritPermissions -eq $false) {
@@ -324,10 +325,10 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 	if ($SiteType.ToUpper() -eq "BI" -or $SiteType.ToUpper() -eq "INTRANET") { $Owner = $Web.EnsureUser($SiteOwner.Substring(5)) } 
 	if ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT") { 
 		$Owner = $Web.EnsureUser($SiteOwner)
-		$OwnerDirect = $Web.EnsureUser($SiteOwner.Substring(5))
+		$OwnerDirect = $Web.EnsureUser($SiteOwner.Substring(8))
 	}
 
-	$Admins = $Web.EnsureUser("<Insert Site Owner Security Group Here>")
+	$Admins = $Web.EnsureUser($sitename + ' Owners')
 
 	# Remove Site Owner's Direct Site Permissions
 	if (($Web -ne $null) -and ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT")) { 
@@ -340,32 +341,11 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 		}
 	}
 	
-	# Remove Site Owner from Owners Group	
-	if ($Web -ne $null) { 
-		try { 
-			$Web.SiteGroups["$SiteName Owners"].RemoveUser($Owner)
-			Write-Host "`nSite Owner ($SiteOwner) has been Successfully Removed from the $SiteName Owners Group" -Foreground "Green"
-		} catch {
-			Write-Host "`nERROR: Failed to remove Site Owner ($SiteOwner) from the $SiteName Owners Group!`nERROR MSG: $_" -Foreground "Red"
-		}
-	}
-
-	# Add EPNT Administrators to Owners Group
-		if ($Web -ne $null) { 
-		try { 
-			$Web.SiteGroups["$SiteName Owners"].AddUser($Admins)
-			Write-Host "`n<Insert Site Owner Security Group Here> Domain Group (<Insert Site Owner Security Group Here>) has been Successfully Added to the $SiteName Owners Group" -Foreground "Green"
-		} catch {
-			Write-Host "`nERROR: Failed to add the <Insert Site Owner Security Group Here> Domain Group (<Insert Site Owner Security Group Here>) to the $SiteName Owners Group!`nERROR MSG: $_" -Foreground "Red"
-		}
-	}
-
+	
 	# Remove Unused Site Groups
 	if ($Web -ne $null -and $SiteLevel.ToUpper() -ne "WEB") {
 		RemoveSiteGroup -SiteGroup "Approvers"
-		RemoveSiteGroup -SiteGroup "Designers"
 		RemoveSiteGroup -SiteGroup "Hierarchy Managers"
-		RemoveSiteGroup -SiteGroup "Restricted Readers"
 		RemoveSiteGroup -SiteGroup "Translation Managers"
 	}
 
@@ -389,7 +369,7 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 		$Web.Update()
 
 		# Remove Site Owner from Designers Site Group
-		$Owner = $Web.EnsureUser($SiteOwner.Substring(5))
+		$Owner = $Web.EnsureUser($SiteOwner.Substring(8))
 		$DesignersGroup.RemoveUser($Owner)
 
 		Write-Host "`nDesigners Site Group ($SiteName Designers) Successfully Created and Granted Design Permissions" -Foreground "Green"
