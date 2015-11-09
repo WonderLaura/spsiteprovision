@@ -1,6 +1,6 @@
-#### Created 2014-03-11
+#### Created 2015-11-5
 #### Purpose: Create New Site Collection on Existing Web Application
-###### Updated 2014-06-02 - Added Site Level Switch and Code to Support the Creation of Sub Sites within Existing Site Collections
+
 
 # Create Command Line Paramaters/Variables
 param (
@@ -10,10 +10,12 @@ param (
 	[string]$SiteName,
 	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site URL")] 
 	[string]$SiteUrl,
-	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, or Project)")]
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, INTRANET, or Project)")]
 	[string]$SiteType,
 	[Parameter(Mandatory=$false,HelpMessage="Please Specify if Web has Unique Permissions (true or false)")]
 	[string]$InheritPermissions,
+    [Parameter(Mandatory=$true,HelpMessage="What is the site owner email address?")]
+	[string]$userEmail,
 	[Parameter(Mandatory=$true,HelpMessage="Please Enter the type of EPNT Farm (DEV, TEST, PROD, or DR)")] 
 	[string]$FarmType
 )
@@ -55,6 +57,9 @@ else {
 # Validate Inherit Permissions Variable was specified and if no set it to False
 if (!$InheritPermissions) { $InheritPermissions = $false }
 if ($SiteLevel.ToUpper() -eq "COLLECTION") { $InheritPermissions = $false }
+
+# If no email, set this default user email
+if (!$userEmail) { $userEmail = "admin@contoso.com" }
 
 # Create Site
 if ($SiteLevel.ToUpper() -eq "COLLECTION") {
@@ -161,38 +166,10 @@ Function RemoveSiteGroup ($SiteGroup) {
 	}
 }
 
-# Enable Site Collection Features
-Function EnableSiteFeature ($Feature) {
-	$SPFeature = Get-SPFeature -Site $SiteUrl | Where {$_.DisplayName -eq $Feature}
-	if ($SPFeature -eq $null) { 
-		Enable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
-		if ($spError -ne $null) {
-			Write-Host "`nERROR: Unable to Enable Site Collection Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
-		} else {
-			Write-Host "`nSite Collection Feature ($Feature) Successfully Enabled" -Foreground "Green"
-		}
-	} else {
-		Write-Host "`nSite Collection Feature ($Feature) Already Enabled" -Foreground "Yellow"
-	}
-}
 
-# Enable Web Features
-Function EnableWebFeature ($Feature) {
-	$SPFeature = Get-SPFeature -Web $SiteUrl | Where {$_.DisplayName -eq $Feature}
-	if ($SPFeature -eq $null) { 
-		Enable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
-		if ($spError -ne $null) {
-			Write-Host "`nERROR: Unable to Enable Site Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
-		} else {
-			Write-Host "`nSite Feature ($Feature) Successfully Enabled" -Foreground "Green"
-		}
-	} else {
-		Write-Host "`nSite Feature ($Feature) Already Enabled" -Foreground "Yellow"
-	}
-}
-
-# Update Site/Web Default Home Page
-Function UpdateWelcomePage ($RenameExisting) {
+# Update Site/Web Default Home Page for publishing sites
+if ($SiteType.ToUpper() -eq "INTRANET") {
+ Function UpdateWelcomePage ($RenameExisting) {
 
 	if ($RenameExisting -eq $true) {
 		$PubWeb = [Microsoft.SharePoint.Publishing.PublishingWeb]::GetPublishingWeb($Web)
@@ -224,7 +201,10 @@ Function UpdateWelcomePage ($RenameExisting) {
 	} catch {
 		Write-Host "`nERROR: Failed to update Welcome Page for $SiteName!`nERROR MSG: $_" -Foreground "Red"
 	}
-}
+ }
+ }
+
+
 
 # Add Content Editor Web Part to Home Page with Default Text based upon Site Type
 Function AddNewWP ($WPType) {
@@ -275,7 +255,7 @@ Function AddNewWP ($WPType) {
 
 	# Check In and Publish Publishing Page
 	$PubPage.CheckIn("")
-	$PubPage.Publish("")
+	if ($SiteType.ToUpper() -eq "INTRANET") {$PubPage.Publish("")}
 	$PubPage.Update()
 }
 
@@ -341,6 +321,52 @@ write-host "Step 1: Done"
 # Specify the name of the visitors SharePoint group
 $visitorsSPGroupName = ($SiteName + ' Visitors')
 
+# Enable Site Collection Features
+Function EnableSiteFeature ($Feature) {
+	$SPFeature = Get-SPFeature -Site $SiteUrl | Where {$_.DisplayName -eq $Feature}
+	if ($SPFeature -eq $null) { 
+		Enable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+		if ($spError -ne $null) {
+			Write-Host "`nERROR: Unable to Enable Site Collection Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
+		} else {
+			Write-Host "`nSite Collection Feature ($Feature) Successfully Enabled" -Foreground "Green"
+		}
+	} else {
+		Write-Host "`nSite Collection Feature ($Feature) Already Enabled" -Foreground "Yellow"
+	}
+}
+
+# Enable Web Features
+Function EnableWebFeature ($Feature) {
+	$SPFeature = Get-SPFeature -Web $SiteUrl | Where {$_.DisplayName -eq $Feature}
+	if ($SPFeature -eq $null) { 
+		Enable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+		if ($spError -ne $null) {
+			Write-Host "`nERROR: Unable to Enable Site Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
+		} else {
+			Write-Host "`nSite Feature ($Feature) Successfully Enabled" -Foreground "Green"
+		}
+	} else {
+		Write-Host "`nSite Feature ($Feature) Already Enabled" -Foreground "Yellow"
+	}
+}
+
+# Disable Web Features
+Function DisableWebFeature ($Feature) {
+	$SPFeature = Get-SPFeature -Web $SiteUrl | Where {$_.DisplayName -eq $Feature}
+	if ($SPFeature -eq $null) { 
+		Disable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+		if ($spError -ne $null) {
+			Write-Host "`nERROR: Unable to Disable Site Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
+		} else {
+			Write-Host "`nSite Feature ($Feature) Successfully Disabled" -Foreground "Green"
+		}
+	} else {
+		Write-Host "`nSite Feature ($Feature) Already Disabled" -Foreground "Yellow"
+	}
+}
+
+
 # Enable Features
 
 	# Enable Site Collection Features
@@ -349,14 +375,21 @@ $visitorsSPGroupName = ($SiteName + ' Visitors')
 		EnableSiteFeature -Feature "BaseSite" -Scope "Site"
 		EnableSiteFeature -Feature "PublishingSite" -Scope "Site"
 		EnableSiteFeature -Feature "PremiumSite" -Scope "Site"
+        EnableSiteFeature -Feature "Workflows" -scope "site"
 		if ($SiteType.ToUpper() -eq "BI") { EnableSiteFeature -Feature "PowerPivotSite" -Scope "Site" }
 	}
 
 	# Enable Site Features
 	Write-Host "`nEnabling Site Features"
 	EnableWebFeature -Feature "BaseWeb" -Scope "Web"
-	EnableWebFeature -Feature "PublishingWeb" -Scope "Web"
-	EnableWebFeature -Feature "PremiumWeb" -Scope "Web"		
+	if ($SiteType.ToUpper() -eq "INTRANET") { EnableWebFeature -Feature "PublishingWeb" -Scope "Web" }
+	EnableWebFeature -Feature "PremiumWeb" -Scope "Web"	
+    EnableWebFeature -Feature "Metadatanav" -scope "web"	
+
+    # Disable Site Features
+	Write-Host "`nDisabling Site Features"
+    DisableWebFeature -Feature "WikiPageHomePage" -Scope "Web"
+	
 
 # Update Site Permissions
 if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
@@ -389,6 +422,53 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 		RemoveSiteGroup -SiteGroup "Hierarchy Managers"
 		RemoveSiteGroup -SiteGroup "Translation Managers"
 	}
+
+###### Create a new assignment (group and permission level pair) which will be added to the web object 
+    $owners = ($SiteName + ' Owners')
+    $OwnerGroup = $web.SiteGroups[$owners]
+    $members = ($SiteName + ' Members')
+    $membersGroup = $web.SiteGroups[$members]
+    $ownerGroupAssignment = new-object Microsoft.SharePoint.SPRoleAssignment($ownerGroup) 
+    $membersGroupAssignment = new-object Microsoft.SharePoint.SPRoleAssignment($membersGroup)
+    $ownerRoleDefinition = $web.Site.RootWeb.RoleDefinitions["Site Manager"] 
+    $membersRoleDefinition = $web.Site.RootWeb.RoleDefinitions["Contribute"]
+    $ownerGroupAssignment.RoleDefinitionBindings.Add($ownerRoleDefinition) 
+    $membersGroupAssignment.RoleDefinitionBindings.Add($membersRoleDefinition)
+    $web.RoleAssignments.Add($ownerGroupAssignment) 
+    $web.RoleAssignments.Add($membersGroupAssignment)
+
+    # Make SP admin the owner of the owners group
+    $OwnersGroup = $Web.SiteGroups["$SiteName Owners"]
+    $user = $web.EnsureUser("contoso\administrator")
+	$OwnersGroup.Owner = $user
+	$OwnersGroup.Update()
+
+    # allow requests for membership in visitors and members groups
+    $MembersGroup = $Web.SiteGroups["$SiteName Members"]
+    $Membersgroup.AllowRequestToJoinLeave = $true
+    $Membersgroup.RequestToJoinLeaveEmailSetting = $userEmail
+	$MembersGroup.Update()
+
+
+    
+    # remove full control from owners, and edit from members
+
+    $group = $web.SiteGroups[$ownerGroup]
+    $ra = $group.ParentWeb.RoleAssignments.GetAssignmentByPrincipal($group)
+    $rd = $group.ParentWeb.RoleDefinitions["Full Control"]
+    $ra.RoleDefinitionBindings.Remove($rd)
+    $ra.Update()
+    $group.Update()
+    $web.Dispose()
+    $group = $web.SiteGroups[$membersGroup]
+    $ra = $group.ParentWeb.RoleAssignments.GetAssignmentByPrincipal($group)
+    $rd = $group.ParentWeb.RoleDefinitions["Edit"]
+    $ra.RoleDefinitionBindings.Remove($rd)
+    $ra.Update()
+    $group.Update()
+    $web.Dispose()
+    
+
 
 	# Create Designers Site Group and Grant Designer Role Permissions to Site
 	# $GroupOwner = $Web.SiteGroups["$SiteName Owners"]
