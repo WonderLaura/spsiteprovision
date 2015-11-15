@@ -1,0 +1,668 @@
+#### Created 2015-11-5
+#### Purpose: Create New Site Collection on Existing Web Application
+
+
+# Create Command Line Paramaters/Variables
+param (
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Level (Collection or Web)")] 
+	[string]$SiteLevel,
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Name")]
+	[string]$SiteName,
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site URL")] 
+	[string]$SiteUrl,
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the Site Type (BI, Team, INTRANET, or Project)")]
+	[string]$SiteType,
+	[Parameter(Mandatory=$false,HelpMessage="Please Specify if Web has Unique Permissions (true or false)")]
+	[string]$InheritPermissions,
+    [Parameter(Mandatory=$true,HelpMessage="What is the site owner email address?")]
+	[string]$userEmail,
+	[Parameter(Mandatory=$true,HelpMessage="Please Enter the type of EPNT Farm (DEV, TEST, PROD, or DR)")] 
+	[string]$FarmType
+)
+Write-Host "`nBegin Create New Site Script"
+
+# Validate that PowerShell is Running in Administrator Mode
+if ( -not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
+	Write-Host "`nERROR: This PowerShell Prompt is not running in Administrator mode" -foregroundcolor "red"
+	Write-Host "Please restart PowerShell using 'Run As Administrator' option and try again" -foregroundcolor "red"
+	Write-Host "`nEnd Create New Site Script`n"
+	return
+}
+
+# Validate that SharePoint Snap-In is Loaded and if not Load Snap-In
+if ((Get-PSSnapin -Name Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue) -eq $null) { Add-PSSnapin Microsoft.SharePoint.PowerShell -erroraction SilentlyContinue } 
+
+# Validate that a valid Farm Type was specified and if so set Farm specific variables
+if ($FarmType.ToUpper() -eq "DEV") { $SiteOwner = "contoso\administrator" }
+elseif ($FarmType.ToUpper() -eq "TEST") { $SiteOwner = "contoso\administrator" }
+elseif ($FarmType.ToUpper() -eq "PROD") { $SiteOwner = "contoso\administrator" }
+elseif ($FarmType.ToUpper() -eq "DR") { $SiteOwner = "contoso\administrator" } 
+else {
+	Write-Host "`nERROR: You have entered an invalid EPNT Farm Type! `nERROR MSG: Please try again and specify DEV, TEST, PROD, or DR as the -FarmType value." -Foreground "Red"
+	Write-Host "`nEnd Create New Site Script`n"
+	return
+}
+
+# Validate that a validate Site Type was specified and if so set Site Template variables
+if ($SiteType.ToUpper() -eq "BI") { $SiteTemplate = Get-SPWebTemplate "BICenterSite#0" }
+elseif ($SiteType.ToUpper() -eq "TEAM") { $SiteTemplate = Get-SPWebTemplate "STS#0" }
+elseif ($SiteType.ToUpper() -eq "PROJECT") { $SiteTemplate = Get-SPWebTemplate "PROJECTSITE#0" }
+elseif ($SiteType.ToUpper() -eq "INTRANET") { $SiteTemplate = Get-SPWebTemplate "BLANKINTERNETCONTAINER#0" -CompatibilityLevel 15 }
+else {
+	Write-Host "`nERROR: You have entered an invalid Site Type! `nERROR MSG: Please try again and specify BI or Team as the -SiteType value." -Foreground "Red"
+	Write-Host "`nEnd Create New Site Script`n"
+	return
+}
+
+# Validate Inherit Permissions Variable was specified and if no set it to False
+if (!$InheritPermissions) { $InheritPermissions = $false }
+if ($SiteLevel.ToUpper() -eq "COLLECTION") { $InheritPermissions = $false }
+
+# If no email, set this default user email
+if (!$userEmail) { $userEmail = "admin@contoso.com" }
+
+# Create Site
+if ($SiteLevel.ToUpper() -eq "COLLECTION") {
+	# Validate that the Site URL is not already in use
+	$Site = Get-SPSite $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+	if ($Site) { 
+		Write-Host "`nERROR: The requested Site URL ($SiteUrl) is already in use!`nERROR MSG: Please try again and specify a different Site URL." -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+
+	# Create New Site Collection
+	try {
+		Write-Host "`nCreating $SiteName Site"
+
+		$Site = New-SPSite $SiteUrl -Name $SiteName `
+		-OwnerAlias $SiteOwner `
+		-Template $SiteTemplate `
+		-ErrorAction SilentlyContinue `
+		-ErrorVariable spError `
+		-WarningAction SilentlyContinue `
+		-WarningVariable spWarn
+
+		if ($Site -ne $null) { Write-Host "`n$SiteName Site Successfully Created" -Foreground "Green" } 
+		elseif ($spError -ne $null) { 
+			Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
+			Write-Host "`nEnd Create New Site Script`n"
+			return
+		}
+	} catch {
+		Write-Host "`nERROR: Failed to Create $SiteName Top Level Site Collection!`nERROR MSG: $spError" -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+} elseif ($SiteLevel.ToUpper() -eq "WEB") {
+	# Validate that the Web URL is not already in use
+	$Site = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+	if ($Site) { 
+		Write-Host "`nERROR: The requested Site URL ($SiteUrl) is already in use!`nERROR MSG: Please try again and specify a different Site URL." -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+
+	# Create New Site
+	try {
+		Write-Host "`nCreating $SiteName Site"
+
+		if ($InheritPermissions -eq $false) {
+			$Site = New-SPWeb $SiteUrl -Name $SiteName `
+			-Template $SiteTemplate `
+			-UniquePermissions `
+			-ErrorAction SilentlyContinue `
+			-ErrorVariable spError `
+			-WarningAction SilentlyContinue `
+			-WarningVariable spWarn
+		} else { 
+			$Site = New-SPWeb $SiteUrl -Name $SiteName `
+			-Template $SiteTemplate `
+			-ErrorAction SilentlyContinue `
+			-ErrorVariable spError `
+			-WarningAction SilentlyContinue `
+			-WarningVariable spWarn
+		}
+
+		if ($Site -ne $null) { Write-Host "`n$SiteName Site Successfully Created" -Foreground "Green" } 
+		elseif ($spError -ne $null) { 
+			Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
+			Write-Host "`nEnd Create New Site Script`n"
+			return
+		}
+	} catch {
+		Write-Host "`nERROR: Failed to Create $SiteName Site!`nERROR MSG: $spError" -Foreground "Red"
+		Write-Host "`nEnd Create New Site Script`n"
+		return
+	}
+}
+
+# Create Default Site Groups
+Function CreateDefaultSiteGroups {
+	$Web = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+	if ($Web -ne $null) { 
+		try { 
+			$Web.CreateDefaultAssociatedGroups("SHAREPOINT\system","","") 
+			Write-Host "`nDefault Site Groups Successfully Created" -Foreground "Green"
+		} catch {
+			Write-Host "`nERROR: Failed to create Default Site Groups!`nERROR MSG: $_" -Foreground "Red"
+		}
+	}
+}
+
+# Create Access Request Email
+Function AccessEmail {
+	$Web.RequestAccessEmail =$userEmail
+	$Web.Update()
+}
+
+# Remove Unnecessary Site/Web Groups
+Function RemoveSiteGroup ($SiteGroup) {
+	try {
+		$Web.SiteGroups.Remove("$SiteGroup")
+		Write-Host "`nSite Group ($SiteGroup) Successfully Removed" -Foreground "Green"
+	} catch {
+		Write-Host "`nERROR: Failed to remove Site Group ($SiteGroup)!`nERROR MSG: $_" -Foreground "Red"
+	}
+}
+
+
+# Update Site/Web Default Home Page for publishing sites
+if ($SiteType.ToUpper() -eq "INTRANET") {
+ Function UpdateWelcomePage ($RenameExisting) {
+
+	if ($RenameExisting -eq $true) {
+		$PubWeb = [Microsoft.SharePoint.Publishing.PublishingWeb]::GetPublishingWeb($Web)
+		$PubPage = $PubWeb.GetPublishingPages() | Where { $_.Name -eq "default.aspx" }
+		$PubPage.ListItem["Name"] = "defaultold.aspx"
+		$PubPage.ListItem.SystemUpdate()
+	}
+
+	try {	
+		$PubWeb = [Microsoft.SharePoint.Publishing.PublishingWeb]::GetPublishingWeb($Web)
+		$PageName = "default.aspx"
+		$PageTitle = "Home"
+		$PageLayout = $PubWeb.GetAvailablePageLayouts() | Where {$_.Name -eq "BlankWebPartPage.aspx"}
+		$Page = $PubWeb.AddPublishingPage($PageName,$PageLayout)
+		$Page.Update()
+		$Page.ListItem["Title"] = $PageTitle
+		$Page.ListItem.SystemUpdate()
+		$Page.CheckIn("")
+		$Page.ListItem.File.Publish("")
+		$RootFolder.WelcomePage = "Pages/$PageName"
+		$RootFolder.Update()
+	
+		if ($RenameExisting -eq $true) {
+			$PubPage = $PubWeb.GetPublishingPages() | Where { $_.Name -eq "defaultold.aspx" }
+			$PubPage.ListItem.Delete()	
+		}
+		
+		Write-Host "`n$SiteName Welcome Page Successfully Updated" -Foreground "Green"
+	} catch {
+		Write-Host "`nERROR: Failed to update Welcome Page for $SiteName!`nERROR MSG: $_" -Foreground "Red"
+	}
+ }
+ }
+
+
+
+# Add Content Editor Web Part to Home Page with Default Text based upon Site Type
+Function AddNewWP ($WPType) {
+	# Set Publishing Page Properties
+	$Web = Get-SPWeb $SiteUrl
+	if ($Web.ServerRelativeUrl -eq "/") { $Page = $Web.Url + "/" + $Web.RootFolder.WelcomePage } else { $Page = $Web.ServerRelativeUrl + "/" + $Web.RootFolder.WelcomePage }
+	
+	$PubPage = $Web.GetFile($Page)
+	
+	# Check Out Publishing Page
+	$PubPage.CheckOut()
+	$PubPage.Update()
+	
+	# Get the Web Part Manager for the Given Publishing Page
+	$WebPartManager = $Web.GetLimitedWebPartManager($PubPage, [System.Web.UI.WebControls.WebParts.PersonalizationScope]::Shared)
+
+	# Create New Content Editor Web Part and Add it to the Publishing Page
+	if ($WPType -eq "Header") {
+		if ($SiteType.ToUpper() -eq "BI") { $Content = Get-Content .\BISiteWelcomeText.txt }
+		elseif ($SiteType.ToUpper() -eq "TEAM") { $Content = Get-Content .\TeamSiteWelcomeText.txt }
+		elseif ($SiteType.ToUpper() -eq "PROJECT") { $Content = Get-Content .\ProjectSiteWelcomeText.txt }
+
+ 		$WebPart = New-Object Microsoft.SharePoint.WebPartPages.ContentEditorWebPart
+		$WebPart.ChromeType = [System.Web.UI.WebControls.WebParts.PartChromeType]::None
+		$WebPart.IsVisible = $true
+		$WebPart.Title = "Header"
+		$WebPartContent = $Content -replace "SiteName",$SiteName
+		$WebPartXml = New-Object System.Xml.XmlDocument
+		$WebPartXmlElement = $WebPartXml.CreateElement("Content")
+		$WebPartXmlElement.InnerText = $WebPartContent
+		$WebPart.Content = $WebPartXmlElement
+		$WebPartManager.AddWebPart($WebPart,"Header",0)
+	 	$WebPart.Dispose()
+		$Web.Update()
+	}
+
+	# Create New List View Web Part, Link to Important Links, and Addit it to the Publishing Page
+	if ($WPType -eq "Calendar") {
+		$List = $Web.Lists["Calendar"]
+		$ListWP = New-Object Microsoft.SharePoint.WebPartPages.ListViewWebPart
+		$ListWP.ListName = $List.ID.ToString("B").ToUpper()
+		$ListWP.ChromeType = [System.Web.UI.WebControls.WebParts.PartChromeType]::TitleOnly
+		$ListWP.Width = "700px"
+		$WebPartManager.AddWebPart($ListWP,"Header",1)
+		$WebPartManager.SaveChanges($ListWP)
+		$ListWP.Dispose()
+	}
+
+	# Check In and Publish Publishing Page
+	$PubPage.CheckIn("")
+	if ($SiteType.ToUpper() -eq "INTRANET") {$PubPage.Publish("")}
+	$PubPage.Update()
+}
+
+Function CreateList ($ListName, $ListType, $CustomList) {
+	try {
+		$Web = Get-SPWeb $SiteUrl
+		if ($CustomList -eq $true) { $ListTemplate = $Web.Site.GetCustomListTemplates($Web) | Where {$_.Name -eq "$ListType"} } else { $ListTemplate = $Web.ListTemplates[$ListType] }
+		$ListStatus = $Web.Lists.Add($ListName,"",$ListTemplate)
+		Write-Host "`nSuccessfully Added List ($ListName) to $SiteName Site!" -Foreground "Green"
+	} catch {
+		Write-Host "`nERROR: Failed to Add List ($ListName) to $SiteName Site!`nERROR MSG: $_" -Foreground "Red"
+	}
+}
+
+
+
+# Create Default Site Groups
+if ($InheritPermissions -eq $false) {
+	Write-Host "`nCreating Default Site Groups"
+	If ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT") { CreateDefaultSiteGroups }
+	If ($SiteType.ToUpper() -eq "BI" -and $SiteLevel.ToUpper() -eq "WEB") { CreateDefaultSiteGroups }
+	If ($SiteType.ToUpper() -eq "INTRANET" -and $SiteLevel.ToUpper() -eq "WEB") { CreateDefaultSiteGroups }
+}
+
+
+$web=$site.RootWeb;
+write-host "Connected to the site successfully..."
+
+write-host "Step 1: Creating custom permission level: Site Manager"
+$plAdmin=New-Object Microsoft.SharePoint.SPRoleDefinition
+$plAdmin.Name="Site Manager"
+$plAdmin.Description="In charge of managing the site"
+$plAdmin.BasePermissions="EmptyMask,
+ViewListItems,
+AddListItems,
+EditListItems,
+DeleteListItems,
+ApproveItems,
+OpenItems,
+ViewVersions,
+DeleteVersions,
+CancelCheckout,
+ViewFormPages,
+Open,
+ViewPages,
+AddAndCustomizePages,
+ApplyThemeAndBorder,
+ApplyStyleSheets,
+ViewUsageData,
+BrowseDirectories,
+BrowseUserInfo,
+AddDelPrivateWebParts,
+UpdatePersonalWebParts,
+UseClientIntegration,
+UseRemoteAPIs,
+ManageAlerts,
+CreateAlerts,
+EditMyUserInfo,
+EnumeratePermissions"
+$web.RoleDefinitions.Add($plAdmin);
+write-host "Step 1: Done"
+
+# Specify the name of the visitors SharePoint group
+$visitorsSPGroupName = ($SiteName + ' Visitors')
+
+# Enable Site Collection Features
+Function EnableSiteFeature ($Feature) {
+	$SPFeature = Get-SPFeature -Site $SiteUrl | Where {$_.DisplayName -eq $Feature}
+	if ($SPFeature -eq $null) { 
+		Enable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+		if ($spError -ne $null) {
+			Write-Host "`nERROR: Unable to Enable Site Collection Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
+		} else {
+			Write-Host "`nSite Collection Feature ($Feature) Successfully Enabled" -Foreground "Green"
+		}
+	} else {
+		Write-Host "`nSite Collection Feature ($Feature) Already Enabled" -Foreground "Yellow"
+	}
+}
+
+# Enable Web Features
+Function EnableWebFeature ($Feature) {
+	$SPFeature = Get-SPFeature -Web $SiteUrl | Where {$_.DisplayName -eq $Feature}
+	if ($SPFeature -eq $null) { 
+		Enable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+		if ($spError -ne $null) {
+			Write-Host "`nERROR: Unable to Enable Site Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
+		} else {
+			Write-Host "`nSite Feature ($Feature) Successfully Enabled" -Foreground "Green"
+		}
+	} else {
+		Write-Host "`nSite Feature ($Feature) Already Enabled" -Foreground "Yellow"
+	}
+}
+
+# Disable Web Features
+Function DisableWebFeature ($Feature) {
+	$SPFeature = Get-SPFeature -Web $SiteUrl | Where {$_.DisplayName -eq $Feature}
+	if ($SPFeature -eq $null) { 
+		Disable-SPFeature -Identity $Feature -Url $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+		if ($spError -ne $null) {
+			Write-Host "`nERROR: Unable to Disable Site Feature ($Feature)!`nERROR MSG: $spError" -Foreground "Red"
+		} else {
+			Write-Host "`nSite Feature ($Feature) Successfully Disabled" -Foreground "Green"
+		}
+	} else {
+		Write-Host "`nSite Feature ($Feature) Already Disabled" -Foreground "Yellow"
+	}
+}
+
+
+# Enable Features
+
+	# Enable Site Collection Features
+	if ($SiteLevel.ToUpper() -eq "COLLECTION") {
+		Write-Host "`nEnabling Site Collection Features"
+		EnableSiteFeature -Feature "BaseSite" -Scope "Site"
+		EnableSiteFeature -Feature "PublishingSite" -Scope "Site"
+		EnableSiteFeature -Feature "PremiumSite" -Scope "Site"
+        EnableSiteFeature -Feature "Workflows" -scope "site"
+		if ($SiteType.ToUpper() -eq "BI") { EnableSiteFeature -Feature "PowerPivotSite" -Scope "Site" }
+	}
+
+	# Enable Site Features
+	Write-Host "`nEnabling Site Features"
+	EnableWebFeature -Feature "BaseWeb" -Scope "Web"
+	if ($SiteType.ToUpper() -eq "INTRANET") { EnableWebFeature -Feature "PublishingWeb" -Scope "Web" }
+	EnableWebFeature -Feature "PremiumWeb" -Scope "Web"	
+    EnableWebFeature -Feature "Metadatanav" -scope "web"	
+
+    # Disable Site Features
+	Write-Host "`nDisabling Site Features"
+    #DisableWebFeature -Feature "WikiPageHomePage" -Scope "Web"
+	
+
+# Update Site Permissions
+if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
+	Write-Host "`nUpdating Site Permissions"
+	# Set Update Variables
+	$Web = Get-SPWeb $SiteUrl -ErrorAction SilentlyContinue -ErrorVariable spError
+	if ($SiteType.ToUpper() -eq "BI" -or $SiteType.ToUpper() -eq "INTRANET") { $Owner = $Web.EnsureUser($SiteOwner.Substring(8)) } 
+	if ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT") { 
+		$Owner = $Web.EnsureUser($SiteOwner.Substring(8))
+		$OwnerDirect = $Web.EnsureUser($SiteOwner)
+	}
+
+	# $Admins = $Web.EnsureUser($sitename + ' Owners') - not sure what the admins var is for, so commenting out.
+
+	# Remove Site Owner's Direct Site Permissions
+	if (($Web -ne $null) -and ($SiteType.ToUpper() -eq "TEAM" -or $SiteType.ToUpper() -eq "PROJECT")) { 
+		try { 
+			$Web.RoleAssignments.Remove($Owner)
+			$Web.RoleAssignments.Remove($OwnerDirect)
+			Write-Host "`nSite Owner ($SiteOwner) Direct Site Permissions Successfully Removed" -Foreground "Green"
+		} catch {
+			Write-Host "`nERROR: Failed to remove Site Owner ($SiteOwner) direct Site Permissions!`nERROR MSG: $_" -Foreground "Red"
+		}
+	}
+	
+	
+	# Remove Unused Site Groups
+	if ($Web -ne $null -and $SiteLevel.ToUpper() -ne "WEB") {
+		RemoveSiteGroup -SiteGroup "Approvers"
+		RemoveSiteGroup -SiteGroup "Hierarchy Managers"
+		RemoveSiteGroup -SiteGroup "Translation Managers"
+        RemoveSiteGroup -SiteGroup "Designers"
+	}
+
+###### Create a new assignment (group and permission level pair) which will be added to the web object 
+    $owners = ($SiteName + ' Owners')
+    $OwnerGroup = $web.SiteGroups[$owners]
+    $members = ($SiteName + ' Members')
+    $membersGroup = $web.SiteGroups[$members]
+    $ownerGroupAssignment = new-object Microsoft.SharePoint.SPRoleAssignment($ownerGroup) 
+    $membersGroupAssignment = new-object Microsoft.SharePoint.SPRoleAssignment($membersGroup)
+    $ownerRoleDefinition = $web.Site.RootWeb.RoleDefinitions["Site Manager"] 
+    $membersRoleDefinition = $web.Site.RootWeb.RoleDefinitions["Contribute"]
+    $ownerGroupAssignment.RoleDefinitionBindings.Add($ownerRoleDefinition) 
+    $membersGroupAssignment.RoleDefinitionBindings.Add($membersRoleDefinition)
+    $web.RoleAssignments.Add($ownerGroupAssignment) 
+    $web.RoleAssignments.Add($membersGroupAssignment)
+
+    # Make SP admin the owner of the owners group
+    $OwnersGroup = $Web.SiteGroups["$SiteName Owners"]
+    $user = $web.EnsureUser("contoso\administrator")
+	$OwnersGroup.Owner = $user
+	$OwnersGroup.Update()
+
+    # allow requests for membership in visitors and members groups
+    $MembersGroup = $Web.SiteGroups["$SiteName Members"]
+    $Membersgroup.AllowRequestToJoinLeave = $true
+    $Membersgroup.RequestToJoinLeaveEmailSetting = $userEmail
+	$MembersGroup.Update()
+
+
+    
+    # remove full control from owners, and edit from members
+
+    $group = $web.SiteGroups[$ownerGroup]
+    $ra = $group.ParentWeb.RoleAssignments.GetAssignmentByPrincipal($group)
+    $rd = $group.ParentWeb.RoleDefinitions["Full Control"]
+    $ra.RoleDefinitionBindings.Remove($rd)
+    $ra.Update()
+    $group.Update()
+    $web.Dispose()
+    $group = $web.SiteGroups[$membersGroup]
+    $ra = $group.ParentWeb.RoleAssignments.GetAssignmentByPrincipal($group)
+    $rd = $group.ParentWeb.RoleDefinitions["Edit"]
+    $ra.RoleDefinitionBindings.Remove($rd)
+    $ra.Update()
+    $group.Update()
+    $web.Dispose()
+    
+
+
+	# Create Power Users Site Group and Grant Edit Permissions to Site
+	 $GroupOwner = $Web.SiteGroups["$SiteName Owners"]
+	 $GroupDesc = "Use this group to grant people advanced edit permissions to the SharePoint site: $SiteName"
+
+	 try {
+		 # Create Power Users Site Group
+		 $Web.SiteGroups.Add("$SiteName Power Users",$Web.Site.Owner,$Web.Site.Owner,$GroupDesc)
+		 $PUGroup = $Web.SiteGroups["$SiteName Power Users"]
+		 $PUGroup.AllowMembersEditMembership = $false
+		 $PUGroup.Owner = $GroupOwner
+         $PUGroup.AllowRequestToJoinLeave = $true
+         $PUGroup.RequestToJoinLeaveEmailSetting = $userEmail
+		 $PUGroup.Update()
+
+		# Grant Power Users Site Group Edit Role
+		 $PUGroupAssignment = New-Object Microsoft.SharePoint.SPRoleAssignment($PUGroup)
+		 $PURoleDefinition = $Web.Site.RootWeb.RoleDefinitions["Edit"]
+		 $PUGroupAssignment.RoleDefinitionBindings.Add($PURoleDefinition)
+		 $Web.RoleAssignments.Add($PUGroupAssignment)
+		 $Web.Update()
+
+		# Remove Site Owner from Designers Site Group
+		 $Owner = $Web.EnsureUser($SiteOwner)
+		 $PUGroup.RemoveUser($Owner)
+
+	 Write-Host "`nPower Users Site Group ($SiteName Power Users) Successfully Created and Granted Edit Permissions" -Foreground "Green"
+	 } catch {
+	 	Write-Host "`nERROR: Failed to create Power Users Site Group ($SiteName Power Users)!`nERROR MSG: $_" -Foreground "Red"
+	 }
+}
+
+# Create Default Site Lists
+	if ($SiteType.ToUpper() -eq "TEAM") {
+		Write-Host "`nAdding Default Site Lists"
+		CreateList -ListName "Calendar" -ListType "Calendar" -CustomList $false
+	}
+
+# Update Site Navigation
+Write-Host "`nUpdating Site Navigation Settings"
+	try {
+		$Web = Get-SPWeb $SiteUrl
+		$PubWeb = [Microsoft.SharePoint.Publishing.PublishingWeb]::GetPublishingWeb($Web)
+		$PubWeb.Navigation.GlobalIncludePages = $false
+		$PubWeb.Navigation.GlobalIncludeSubSites = $false
+		$PubWeb.Navigation.CurrentIncludePages = $false
+		$PubWeb.Navigation.CurrentIncludeSubSites = $false
+		$PubWeb.Update()
+		Write-Host "`nSuccessfully Updated $SiteName Site Navigation Settings" -Foreground "Green"
+	} catch {
+		Write-Host "`nERROR: Failed to Update $SiteName Site Navigation Settings!`nERROR MSG: $_" -Foreground "Red"
+	}
+
+# Update Site Left Navigation
+	if ($SiteType.ToUpper() -eq "TEAM") {
+		Write-Host "`nUpdating Site Left Navigation"
+		try {
+			$Web = Get-SPWeb $SiteUrl
+			$LeftNav = $Web.Navigation.QuickLaunch
+			$LinkUrl = $Web.ServerRelativeUrl + "/Lists/Calendar/"
+			$LinkTitle = "Calendar"
+			$Link = New-Object Microsoft.SharePoint.Navigation.SPNavigationNode($LinkTitle,$LinkUrl,$true)
+			$LinkStatus = $LeftNav.AddAsLast($Link)
+			$Web.Update()
+			Write-Host "`nCalendar Link Successfully Added to Left Navigation" -Foreground "Green"
+		} catch { 
+			Write-Host "ERROR: Failed to Add Calendar Link to Left Navigation!`nERROR MSG: $_" -Foreground "Red"
+		}
+	}
+
+# Update Welcome Page
+Write-Host "`nUpdating $SiteName Welcome Page"
+
+	# Get Current Welcome Page
+	$RootFolder = $Web.RootFolder
+	$WelcomePage = $RootFolder.WelcomePage
+
+	if ($WelcomePage -eq "Pages/default.aspx") { UpdateWelcomePage -RenameExisting $true }
+	if ($WelcomePage -eq "SitePages/Home.aspx" -or $WelcomePage -eq "") { UpdateWelcomePage -RenameExisting $false }
+	AddNewWP -WPType Header
+	if ($SiteType.ToUpper() -eq "TEAM") { AddNewWP -WPType Calendar }
+
+# Update Site Look and Feel
+Write-Host "`nUpdating $SiteName Look and Feel"
+
+# Upload rackspace themes
+$SiteTheme = Get-Item .\RackspaceRed.spcolor
+$Folder = $Web.GetFolder("Theme Gallery")
+$FolderUrl = "_catalogs/theme/15"
+$FileStatus = $Folder.Files.Add($FolderUrl + "/" + $SiteTheme.Name,$SiteTheme.OpenRead(),$false)
+$SiteTheme = Get-Item .\RackspaceTurq.spcolor
+$FileStatus = $Folder.Files.Add($FolderUrl + "/" + $SiteTheme.Name,$SiteTheme.OpenRead(),$false)
+$listname = "Composed Looks"
+$list = $web.Lists[$listname]
+Write-host "List $($list.title) has $($list.items.count) entries"
+$items = $list.items
+foreach ($item in $items)
+{
+    Write-host "  Say Goodbye to $($item.id)" -foregroundcolor red
+    $list.getitembyid($Item.id).Delete()
+}
+
+$newItem = $list.Items.Add()
+$newItem["Title"] = "Rackspace Red"
+$newItem["Name"] = "Rackspace Red"
+$newItem["Master Page URL"] = "/sites/test95/_catalogs/masterpage/seattle.master"
+$newItem["Theme URL"] = "/sites/test95/_catalogs/theme/15/RackspaceRed.spcolor"
+$newItem["Display Order"] = 6
+$newItem.Update()
+$newItem = $list.Items.Add()
+$newItem["Title"] = "Rackspace Turquoise"
+$newItem["Name"] = "Rackspace Turquoise"
+$newItem["Master Page URL"] = "/sites/test95/_catalogs/masterpage/seattle.master"
+$newItem["Theme URL"] = "/sites/test95/_catalogs/theme/15/RackspaceTurq.spcolor"
+$newItem["Display Order"] = 6
+$newItem.Update()
+
+	# Set Look and Feel Variables
+	$CatalogUrl = "/_catalogs"
+	$ColorPalette = "/theme/15/RackspaceRed.spcolor"
+	$FontScheme = "/theme/15/SharePointPersonality.spfont"
+	
+	if ($Web.ServerRelativeUrl -eq "/") { $ThemeUrl = $CatalogUrl + $ColorPalette } 
+	elseif ($Web.Site.Url -eq $Web.Url) { $ThemeUrl = $Web.ServerRelativeUrl + $CatalogUrl + $ColorPalette }
+	elseif ($SiteLevel.ToUpper() -eq "WEB") {
+		$ThemeSite = Get-SPSite $Web.Site.Url
+		$ThemeUrl = $ThemeSite.ServerRelativeUrl + $CatalogUrl + $ColorPalette
+	}
+	
+	if ($Web.ServerRelativeUrl -eq "/") { $FontSchemeUrl = $CatalogUrl + $FontScheme } 
+	elseif ($Web.Site.Url -eq $Web.Url) { $FontSchemeUrl = $Web.ServerRelativeUrl + $CatalogUrl + $FontScheme }
+	elseif ($SiteLevel.ToUpper() -eq "WEB") { 
+		$ThemeSite = Get-SPSite $Web.Site.Url
+		$FontSchemeUrl = $ThemeSite.ServerRelativeUrl + $CatalogUrl + $FontScheme
+	}
+
+	# Apply Theme to Site
+	if ($Web -ne $null) {
+		try {
+			$Web.ApplyTheme($ThemeUrl,$FontSchemeUrl,"","")
+			Write-Host "`n$SiteName Look and Feel Successfully Updated" -Foreground "Green"
+		} catch {
+			Write-Host "`nERROR: Failed to update $SiteName Look and Feel!`nERROR MSG: $_" -Foreground "Red"
+		}
+	}
+
+# Delete old themes
+$Libraries = $web.Lists | where {$_.Title -eq "Theme Gallery"}
+
+    foreach ($library in $Libraries) {
+
+        Write-Output "Getting files from $($library.Title)"
+
+        $Files = $library.Items | where {$_.File -Like "Palette0*.spcolor"}
+
+        foreach ($file in $Files) {
+
+            Write-Output "Deleting file $($file.Name)..."
+
+            $file.Delete()
+
+         
+
+        } # foreach file
+        }
+
+# Update Site Logo
+Write-Host "`nUpdating Site Logo"
+
+	# Set Site Logo and Folder Variables
+	$Web = Get-SPWeb $SiteUrl
+	$SiteLogo = Get-Item .\SiteLogo.png
+	if ($SiteType.ToUpper() -eq "BI" -or $SiteType.ToUpper() -eq "INTRANET") {
+		$Folder = $Web.GetFolder("Images")
+		$FolderURL = "PublishingImages"
+	} else {
+		$Folder = $Web.GetFolder("Site Assets")
+		$FolderUrl = "SiteAssets"
+	}
+
+	try {
+		# Upload Site Logo to Site Assets Folder
+		$FileStatus = $Folder.Files.Add($FolderUrl + "/" + $SiteLogo.Name,$SiteLogo.OpenRead(),$false)
+		
+		# Update Site Logo Settings
+		$Web.SiteLogoUrl = $Web.ServerRelativeUrl + "/" + $FolderUrl + "/" + $SiteLogo.Name
+		$Web.Update()
+
+		Write-Host "`n$SiteName Site Logo Successfully Updated" -Foreground "Green"
+	} catch {
+		Write-Host "`nERROR: Failed to update $SiteName Site Logo!`nERROR MSG: $_" -Foreground "Red"
+	}
+
+$Web.Dispose()
+
+Write-Host "`nEnd Create New Site Script`n"
