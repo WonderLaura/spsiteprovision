@@ -388,7 +388,7 @@ Function DisableWebFeature ($Feature) {
 
     # Disable Site Features
 	Write-Host "`nDisabling Site Features"
-    DisableWebFeature -Feature "WikiPageHomePage" -Scope "Web"
+    #DisableWebFeature -Feature "WikiPageHomePage" -Scope "Web"
 	
 
 # Update Site Permissions
@@ -421,6 +421,7 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
 		RemoveSiteGroup -SiteGroup "Approvers"
 		RemoveSiteGroup -SiteGroup "Hierarchy Managers"
 		RemoveSiteGroup -SiteGroup "Translation Managers"
+        RemoveSiteGroup -SiteGroup "Designers"
 	}
 
 ###### Create a new assignment (group and permission level pair) which will be added to the web object 
@@ -470,33 +471,35 @@ if ($InheritPermissions -eq $false -or $SiteLevel.ToUpper() -eq "COLLECTION") {
     
 
 
-	# Create Designers Site Group and Grant Designer Role Permissions to Site
-	# $GroupOwner = $Web.SiteGroups["$SiteName Owners"]
-	# $GroupDesc = "Use this group to grant people full control permissions to the SharePoint site: $SiteName"
+	# Create Power Users Site Group and Grant Edit Permissions to Site
+	 $GroupOwner = $Web.SiteGroups["$SiteName Owners"]
+	 $GroupDesc = "Use this group to grant people advanced edit permissions to the SharePoint site: $SiteName"
 
-	# try {
-		# Create Designers Site Group
-		# $Web.SiteGroups.Add("$SiteName Designers",$Web.Site.Owner,$Web.Site.Owner,$GroupDesc)
-		# $DesignersGroup = $Web.SiteGroups["$SiteName Designers"]
-		# $DesignersGroup.AllowMembersEditMembership = $false
-		# $DesignersGroup.Owner = $GroupOwner
-		# $DesignersGroup.Update()
+	 try {
+		 # Create Power Users Site Group
+		 $Web.SiteGroups.Add("$SiteName Power Users",$Web.Site.Owner,$Web.Site.Owner,$GroupDesc)
+		 $PUGroup = $Web.SiteGroups["$SiteName Power Users"]
+		 $PUGroup.AllowMembersEditMembership = $false
+		 $PUGroup.Owner = $GroupOwner
+         $PUGroup.AllowRequestToJoinLeave = $true
+         $PUGroup.RequestToJoinLeaveEmailSetting = $userEmail
+		 $PUGroup.Update()
 
-		# Grant Designers Site Group Design Role
-		# $DesignersGroupAssignment = New-Object Microsoft.SharePoint.SPRoleAssignment($DesignersGroup)
-		# $DesignersRoleDefinition = $Web.Site.RootWeb.RoleDefinitions["Design"]
-		# $DesignersGroupAssignment.RoleDefinitionBindings.Add($DesignersRoleDefinition)
-		# $Web.RoleAssignments.Add($DesignersGroupAssignment)
-		# $Web.Update()
+		# Grant Power Users Site Group Edit Role
+		 $PUGroupAssignment = New-Object Microsoft.SharePoint.SPRoleAssignment($PUGroup)
+		 $PURoleDefinition = $Web.Site.RootWeb.RoleDefinitions["Edit"]
+		 $PUGroupAssignment.RoleDefinitionBindings.Add($PURoleDefinition)
+		 $Web.RoleAssignments.Add($PUGroupAssignment)
+		 $Web.Update()
 
 		# Remove Site Owner from Designers Site Group
-		# $Owner = $Web.EnsureUser($SiteOwner.Substring(8))
-		# $DesignersGroup.RemoveUser($Owner)
+		 $Owner = $Web.EnsureUser($SiteOwner)
+		 $PUGroup.RemoveUser($Owner)
 
-		# Write-Host "`nDesigners Site Group ($SiteName Designers) Successfully Created and Granted Design Permissions" -Foreground "Green"
-	# } catch {
-	# 	Write-Host "`nERROR: Failed to create Designers Site Group ($SiteName Designers)!`nERROR MSG: $_" -Foreground "Red"
-	# }
+	 Write-Host "`nPower Users Site Group ($SiteName Power Users) Successfully Created and Granted Edit Permissions" -Foreground "Green"
+	 } catch {
+	 	Write-Host "`nERROR: Failed to create Power Users Site Group ($SiteName Power Users)!`nERROR MSG: $_" -Foreground "Red"
+	 }
 }
 
 # Create Default Site Lists
@@ -552,9 +555,41 @@ Write-Host "`nUpdating $SiteName Welcome Page"
 # Update Site Look and Feel
 Write-Host "`nUpdating $SiteName Look and Feel"
 
+# Upload rackspace themes
+$SiteTheme = Get-Item .\RackspaceRed.spcolor
+$Folder = $Web.GetFolder("Theme Gallery")
+$FolderUrl = "_catalogs/theme/15"
+$FileStatus = $Folder.Files.Add($FolderUrl + "/" + $SiteTheme.Name,$SiteTheme.OpenRead(),$false)
+$SiteTheme = Get-Item .\RackspaceTurq.spcolor
+$FileStatus = $Folder.Files.Add($FolderUrl + "/" + $SiteTheme.Name,$SiteTheme.OpenRead(),$false)
+$listname = "Composed Looks"
+$list = $web.Lists[$listname]
+Write-host "List $($list.title) has $($list.items.count) entries"
+$items = $list.items
+foreach ($item in $items)
+{
+    Write-host "  Say Goodbye to $($item.id)" -foregroundcolor red
+    $list.getitembyid($Item.id).Delete()
+}
+
+$newItem = $list.Items.Add()
+$newItem["Title"] = "Rackspace Red"
+$newItem["Name"] = "Rackspace Red"
+$newItem["Master Page URL"] = "/sites/test95/_catalogs/masterpage/seattle.master"
+$newItem["Theme URL"] = "/sites/test95/_catalogs/theme/15/RackspaceRed.spcolor"
+$newItem["Display Order"] = 6
+$newItem.Update()
+$newItem = $list.Items.Add()
+$newItem["Title"] = "Rackspace Turquoise"
+$newItem["Name"] = "Rackspace Turquoise"
+$newItem["Master Page URL"] = "/sites/test95/_catalogs/masterpage/seattle.master"
+$newItem["Theme URL"] = "/sites/test95/_catalogs/theme/15/RackspaceTurq.spcolor"
+$newItem["Display Order"] = 6
+$newItem.Update()
+
 	# Set Look and Feel Variables
 	$CatalogUrl = "/_catalogs"
-	$ColorPalette = "/theme/15/palette013.spcolor"
+	$ColorPalette = "/theme/15/RackspaceRed.spcolor"
 	$FontScheme = "/theme/15/SharePointPersonality.spfont"
 	
 	if ($Web.ServerRelativeUrl -eq "/") { $ThemeUrl = $CatalogUrl + $ColorPalette } 
@@ -580,6 +615,26 @@ Write-Host "`nUpdating $SiteName Look and Feel"
 			Write-Host "`nERROR: Failed to update $SiteName Look and Feel!`nERROR MSG: $_" -Foreground "Red"
 		}
 	}
+
+# Delete old themes
+$Libraries = $web.Lists | where {$_.Title -eq "Theme Gallery"}
+
+    foreach ($library in $Libraries) {
+
+        Write-Output "Getting files from $($library.Title)"
+
+        $Files = $library.Items | where {$_.File -Like "Palette0*.spcolor"}
+
+        foreach ($file in $Files) {
+
+            Write-Output "Deleting file $($file.Name)..."
+
+            $file.Delete()
+
+         
+
+        } # foreach file
+        }
 
 # Update Site Logo
 Write-Host "`nUpdating Site Logo"
